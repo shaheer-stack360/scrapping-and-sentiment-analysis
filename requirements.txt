@@ -1,0 +1,8 @@
+requests
+langdetect
+pandas
+nltk
+scikit-learn
+#transformers
+torch
+#fasttext-wheel
