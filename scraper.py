@@ -4,6 +4,8 @@ import urllib.parse
 import time
 import csv
 from datetime import datetime
+import re
+from langdetect import detect, LangDetectException
 from data_cleaner import clean_and_filter_review
 
 
@@ -79,7 +81,53 @@ def build_payload(app_id: str, sort: int, count: int, token: str | None = None) 
         "at": XSRF_TOKEN,
     }
 
+def repair_mojibake(text: str) -> str:
+    """Fixes garbled text characters (like Ã Â¤Â® to Hindi/Emojis)"""
+    if not text:
+        return ""
+    try:
+        # Re-encodes the text layout to restore original bytes, then parses as clean UTF-8
+        return text.encode('latin1').decode('utf-8')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
 
+def clean_and_filter_review(raw_text: str) -> dict:
+    """
+    Repairs text, extracts emojis, and checks for English alignment.
+    """
+    # 1. Fix the encoding distortion instantly
+    clean_text = repair_mojibake(raw_text)
+    
+    # 2. Extract and separate Emojis from standard text strings
+    # This regex isolates common unicode symbols, dingbats, and emojis
+    emoji_pattern = re.compile(r'[\U00010000-\U0010ffff\u2600-\u27bf]')
+    emojis_found = "".join(emoji_pattern.findall(clean_text))
+    
+    # Strip emojis out of primary text body to make text evaluation easier
+    text_only = emoji_pattern.sub('', clean_text).strip()
+    # Normalize messy spacing/linebreaks 
+    text_only = re.sub(r'\s+', ' ', text_only) 
+    
+    # 3. Detect Primary Written Language
+    is_english = False
+    detected_lang = "unknown"
+    
+    if text_only:
+        try:
+            detected_lang = detect(text_only)
+            if detected_lang == 'en':
+                is_english = True
+        except LangDetectException:
+            # Reverts to true if it only contains emojis/numbers but no words
+            pass
+            
+    return {
+        "original_fixed": clean_text,
+        "text_only": text_only,
+        "emojis": emojis_found,
+        "language": detected_lang,
+        "is_english": is_english
+    }
 
 # ── Response Parser ────────────────────────────────────────────────────────────
 
